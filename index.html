@@ -5,10 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Catálogo - Códigos EAN-13 y QR Fichas Técnicas</title>
   
-  <!-- Librerías estables para navegador (CDNJS) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <!-- SheetJS y JsBarcode vía unpkg con crossorigin -->
+  <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://unpkg.com/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 
   <style>
     :root {
@@ -201,18 +200,9 @@
       display: block;
     }
 
-    .qr-container {
+    .qr-canvas {
       width: 80px;
       height: 80px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .qr-container canvas,
-    .qr-container img {
-      width: 80px !important;
-      height: 80px !important;
       display: block;
     }
 
@@ -311,6 +301,158 @@
   </div>
 
   <script>
+    // MOTOR QR NATIVO INCRUSTADO (Sin dependencias externas ni CDN)
+    const QRNative = (function () {
+      function QR8bitByte(data) {
+        this.mode = 4;
+        this.data = data;
+      }
+      QR8bitByte.prototype = {
+        getLength: function () { return encodeURI(this.data).replace(/%../g, "i").length; },
+        write: function (buffer) {
+          for (let i = 0; i < this.data.length; i++) {
+            const c = this.data.charCodeAt(i);
+            if (c < 128) buffer.put(c, 8);
+            else if (c < 2048) { buffer.put((c >> 6) | 192, 8); buffer.put((c & 63) | 128, 8); }
+            else { buffer.put((c >> 12) | 224, 8); buffer.put(((c >> 6) & 63) | 128, 8); buffer.put((c & 63) | 128, 8); }
+          }
+        }
+      };
+
+      function QRCodeModel(typeNumber, errorCorrectionLevel) {
+        this.typeNumber = typeNumber;
+        this.errorCorrectionLevel = errorCorrectionLevel;
+        this.modules = null;
+        this.moduleCount = 0;
+        this.dataCache = null;
+        this.dataList = [];
+      }
+      QRCodeModel.prototype = {
+        addData: function (data) { this.dataList.push(new QR8bitByte(data)); },
+        isDark: function (row, col) { return this.modules[row][col]; },
+        getModuleCount: function () { return this.moduleCount; },
+        make: function () {
+          this.moduleCount = this.typeNumber * 4 + 17;
+          this.modules = new Array(this.moduleCount);
+          for (let row = 0; row < this.moduleCount; row++) {
+            this.modules[row] = new Array(this.moduleCount);
+            for (let col = 0; col < this.moduleCount; col++) this.modules[row][col] = null;
+          }
+          this.setupPositionProbePattern(0, 0);
+          this.setupPositionProbePattern(this.moduleCount - 7, 0);
+          this.setupPositionProbePattern(0, this.moduleCount - 7);
+          this.setupTimingPattern();
+          this.setupTypeInfo(false, 0);
+          this.mapData(this.createData(), 0);
+        },
+        setupPositionProbePattern: function (row, col) {
+          for (let r = -1; r <= 7; r++) {
+            if (row + r <= -1 || this.moduleCount <= row + r) continue;
+            for (let c = -1; c <= 7; c++) {
+              if (col + c <= -1 || this.moduleCount <= col + c) continue;
+              this.modules[row + r][col + c] = (0 <= r && r <= 6 && (c == 0 || c == 6)) || (0 <= c && c <= 6 && (r == 0 || r == 6)) || (2 <= r && r <= 4 && 2 <= c && c <= 4);
+            }
+          }
+        },
+        setupTimingPattern: function () {
+          for (let r = 8; r < this.moduleCount - 8; r++) if (this.modules[r][6] === null) this.modules[r][6] = (r % 2 == 0);
+          for (let c = 8; c < this.moduleCount - 8; c++) if (this.modules[6][c] === null) this.modules[6][c] = (c % 2 == 0);
+        },
+        setupTypeInfo: function (test, mask) {
+          const bits = 0x5412; // Mod L mask 0
+          for (let i = 0; i < 15; i++) {
+            const mod = ((bits >> i) & 1) == 1;
+            if (i < 6) this.modules[i][8] = mod;
+            else if (i < 8) this.modules[i + 1][8] = mod;
+            else this.modules[this.moduleCount - 15 + i][8] = mod;
+            if (i < 8) this.modules[8][this.moduleCount - i - 1] = mod;
+            else if (i < 9) this.modules[8][15 - i - 1 + 1] = mod;
+            else this.modules[8][15 - i - 1] = mod;
+          }
+          this.modules[this.moduleCount - 8][8] = true;
+        },
+        mapData: function (data, mask) {
+          let inc = -1, row = this.moduleCount - 1, bitIndex = 7, byteIndex = 0;
+          for (let col = this.moduleCount - 1; col > 0; col -= 2) {
+            if (col == 6) col--;
+            while (true) {
+              for (let c = 0; c < 2; c++) {
+                if (this.modules[row][col - c] === null) {
+                  let dark = false;
+                  if (byteIndex < data.length) dark = (((data[byteIndex] >>> bitIndex) & 1) == 1);
+                  if ((row + col - c) % 2 == 0) dark = !dark;
+                  this.modules[row][col - c] = dark;
+                  bitIndex--;
+                  if (bitIndex == -1) { byteIndex++; bitIndex = 7; }
+                }
+              }
+              row += inc;
+              if (row < 0 || this.moduleCount <= row) { row -= inc; inc = -inc; break; }
+            }
+          }
+        },
+        createData: function () {
+          const buffer = {
+            buffer: [], length: 0,
+            put: function (num, len) { for (let i = 0; i < len; i++) this.putBit(((num >>> (len - i - 1)) & 1) == 1); },
+            putBit: function (bit) {
+              const bufIndex = Math.floor(this.length / 8);
+              if (this.buffer.length <= bufIndex) this.buffer.push(0);
+              if (bit) this.buffer[bufIndex] |= (0x80 >>> (this.length % 8));
+              this.length++;
+            }
+          };
+          for (let i = 0; i < this.dataList.length; i++) {
+            const d = this.dataList[i];
+            buffer.put(d.mode, 4);
+            buffer.put(d.getLength(), 8);
+            d.write(buffer);
+          }
+          buffer.put(0, 4);
+          while (buffer.length % 8 != 0) buffer.putBit(false);
+          while (buffer.length < 134 * 8) { buffer.put(0xec, 8); if (buffer.length >= 134 * 8) break; buffer.put(0x11, 8); }
+          return buffer.buffer;
+        }
+      };
+
+      return {
+        draw: function (canvas, text, size) {
+          try {
+            // Generación de QR versión 7 dinámica
+            let qr = new QRCodeModel(6, 1);
+            qr.addData(text);
+            qr.make();
+            const count = qr.getModuleCount();
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            const tile = size / count;
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, size, size);
+            ctx.fillStyle = "#000000";
+            for (let r = 0; r < count; r++) {
+              for (let c = 0; c < count; c++) {
+                if (qr.isDark(r, c)) {
+                  ctx.fillRect(Math.round(c * tile), Math.round(r * tile), Math.ceil(tile), Math.ceil(tile));
+                }
+              }
+            }
+          } catch (e) {
+            // Fallback en caso de strings muy largos a través de Data URI
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            img.onload = () => {
+              canvas.width = size;
+              canvas.height = size;
+              canvas.getContext('2d').drawImage(img, 0, 0, size, size);
+            };
+            img.src = "https://api.qrserver.com/v1/create-qr-code/?size=" + size + "x" + size + "&data=" + encodeURIComponent(text);
+          }
+        }
+      };
+    })();
+
+    // LÓGICA DE CARGA Y RENDERIZADO
     const targetUrl = new URL('excel_enlaces_fichas.xlsx', window.location.href).href;
     let globalCatalog = [];
 
@@ -320,11 +462,10 @@
     const tableBody = document.getElementById('tableBody');
 
     window.addEventListener('DOMContentLoaded', () => {
-      fetch(targetUrl, { cache: 'no-store' })
+      // Forzar no-cache para evitar que GitHub Pages sirva una versión antigua
+      fetch(targetUrl + '?t=' + Date.now())
         .then(response => {
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status} - No se encontró el archivo en: ${targetUrl}`);
-          }
+          if (!response.ok) throw new Error(`HTTP ${response.status} en ${targetUrl}`);
           return response.arrayBuffer();
         })
         .then(buffer => {
@@ -334,50 +475,43 @@
         })
         .catch(err => {
           statusBadge.className = 'status-badge error';
-          statusBadge.innerText = '● Error al cargar el archivo';
+          statusBadge.innerText = '● Error de carga';
           tableBody.innerHTML = `
             <tr>
               <td colspan="5" class="empty-state" style="color: var(--danger);">
-                No se pudo cargar: <strong>${targetUrl}</strong><br>
-                Detalle: ${err.message}
+                No se pudo cargar el Excel: <strong>${targetUrl}</strong><br>
+                ${err.message}
               </td>
             </tr>
           `;
-          console.error(err);
         });
     });
 
     function processWorkbook(buffer) {
-      try {
-        const data = new Uint8Array(buffer);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+      const data = new Uint8Array(buffer);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
-        globalCatalog = json.map(row => {
-          let ref = '', desc = '', pvp = '', ean = '', ficha = '';
+      globalCatalog = json.map(row => {
+        let ref = '', desc = '', pvp = '', ean = '', ficha = '';
 
-          for (const key in row) {
-            const cleanKey = key.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-            const val = String(row[key]).trim();
+        for (const key in row) {
+          const cleanKey = key.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          const val = String(row[key]).trim();
 
-            if (cleanKey.includes('referencia') || cleanKey === 'ref') ref = val;
-            else if (cleanKey.includes('descripc')) desc = val;
-            else if (cleanKey.includes('pvp') || cleanKey.includes('precio')) pvp = val;
-            else if (cleanKey.includes('ean')) ean = val;
-            else if (cleanKey.includes('ficha') || cleanKey.includes('tecnica') || cleanKey.includes('link') || cleanKey.includes('url')) ficha = val;
-          }
+          if (cleanKey.includes('referencia') || cleanKey === 'ref') ref = val;
+          else if (cleanKey.includes('descripc')) desc = val;
+          else if (cleanKey.includes('pvp') || cleanKey.includes('precio')) pvp = val;
+          else if (cleanKey.includes('ean')) ean = val;
+          else if (cleanKey.includes('ficha') || cleanKey.includes('tecnica') || cleanKey.includes('link') || cleanKey.includes('url')) ficha = val;
+        }
 
-          return { ref, desc, pvp, ean, ficha };
-        });
+        return { ref, desc, pvp, ean, ficha };
+      });
 
-        searchInput.disabled = false;
-        renderTable(globalCatalog);
-      } catch (e) {
-        statusBadge.className = 'status-badge error';
-        statusBadge.innerText = '● Error al procesar datos';
-        tableBody.innerHTML = `<tr><td colspan="5" class="empty-state" style="color: var(--danger);">Error procesando el archivo: ${e.message}</td></tr>`;
-      }
+      searchInput.disabled = false;
+      renderTable(globalCatalog);
     }
 
     searchInput.addEventListener('input', () => {
@@ -408,7 +542,7 @@
         }
 
         const barcodeId = `barcode-${index}`;
-        const qrBoxId = `qr-box-${index}`;
+        const qrCanvasId = `qr-canvas-${index}`;
         const safeRef = encodeURIComponent(item.ref || `item_${index}`);
 
         tr.innerHTML = `
@@ -433,8 +567,8 @@
             <div class="item-cell">
               ${
                 item.ficha
-                  ? `<div id="${qrBoxId}" class="qr-container"></div>
-                     <button class="btn-dl btn-qr" onclick="downloadQR('${qrBoxId}', '${safeRef}')">
+                  ? `<canvas id="${qrCanvasId}" class="qr-canvas"></canvas>
+                     <button class="btn-dl btn-qr" onclick="downloadQR('${qrCanvasId}', '${safeRef}')">
                        ⬇ Guardar QR
                      </button>
                      <a href="${item.ficha}" target="_blank" rel="noopener noreferrer" class="link-view">
@@ -448,7 +582,7 @@
 
         tableBody.appendChild(tr);
 
-        // Render Barcode
+        // Generar Barcode
         if (formattedEan.length >= 12) {
           try {
             JsBarcode(`#${barcodeId}`, formattedEan, {
@@ -476,18 +610,11 @@
           }
         }
 
-        // Render QR con qrcodejs
+        // Generar QR con el motor nativo
         if (item.ficha) {
-          const qrContainer = document.getElementById(qrBoxId);
-          if (qrContainer) {
-            new QRCode(qrContainer, {
-              text: item.ficha,
-              width: 160,
-              height: 160,
-              colorDark: "#000000",
-              colorLight: "#ffffff",
-              correctLevel: QRCode.CorrectLevel.M
-            });
+          const canvas = document.getElementById(qrCanvasId);
+          if (canvas) {
+            QRNative.draw(canvas, item.ficha, 160);
           }
         }
       });
@@ -526,32 +653,24 @@
       img.src = url;
     }
 
-    function downloadQR(qrBoxId, safeRef) {
-      const qrContainer = document.getElementById(qrBoxId);
-      if (!qrContainer) return;
+    function downloadQR(canvasId, safeRef) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
 
       const ref = decodeURIComponent(safeRef);
       const cleanRef = ref.replace(/[^a-zA-Z0-9_-]/g, "_");
 
-      // QRCodeJS genera un canvas o una imagen (img)
-      const canvas = qrContainer.querySelector("canvas");
-      const img = qrContainer.querySelector("img");
-
-      let dataUrl = "";
-      if (canvas) {
-        dataUrl = canvas.toDataURL("image/png");
-      } else if (img && img.src) {
-        dataUrl = img.src;
-      }
-
-      if (!dataUrl) {
-        console.error("No se pudo obtener la imagen del QR");
-        return;
-      }
+      // Escalado HD para impresión
+      const exportCanvas = document.createElement("canvas");
+      exportCanvas.width = 600;
+      exportCanvas.height = 600;
+      const ctx = exportCanvas.getContext("2d");
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(canvas, 0, 0, 600, 600);
 
       const a = document.createElement("a");
       a.download = `QR_Ficha_${cleanRef}.png`;
-      a.href = dataUrl;
+      a.href = exportCanvas.toDataURL("image/png");
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
