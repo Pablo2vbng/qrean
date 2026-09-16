@@ -92,44 +92,10 @@
       border-color: #86efac;
     }
 
-    .upload-zone {
-      margin-top: 18px;
-      border: 2px dashed #cbd5e1;
-      border-radius: 8px;
-      padding: 16px;
-      text-align: center;
-      background: #f8fafc;
-      transition: all 0.2s ease;
-      cursor: pointer;
-    }
-
-    .upload-zone:hover {
-      border-color: var(--accent);
-      background: #eff6ff;
-    }
-
-    .upload-zone input {
-      display: none;
-    }
-
-    .btn-action {
-      background: #ffffff;
-      border: 1px solid #cbd5e1;
-      color: #334155;
-      padding: 7px 14px;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      transition: all 0.15s ease;
-    }
-
-    .btn-action:hover {
-      background: #f1f5f9;
-      border-color: #94a3b8;
+    .status-badge.error {
+      background: var(--danger-bg);
+      color: var(--danger);
+      border-color: #fca5a5;
     }
 
     .toolbar {
@@ -304,17 +270,9 @@
       <div class="header-top">
         <div>
           <h1>Catálogo de Productos: EAN-13 y QR</h1>
-          <p class="subtitle">Descarga uno a uno los códigos de barras y los QR vinculados a las fichas técnicas.</p>
+          <p class="subtitle">Descarga individualmente los códigos de barras y los QR vinculados a las fichas técnicas.</p>
         </div>
-        <div id="statusBadge" class="status-badge">Conectando con datos...</div>
-      </div>
-
-      <div class="upload-zone" onclick="document.getElementById('excelInput').click()">
-        <input type="file" id="excelInput" accept=".xlsx, .xls">
-        <span class="btn-action">📂 Cambiar archivo Excel</span>
-        <span id="fileNote" style="margin-left: 8px; font-size: 12px; color: var(--text-muted);">
-          Buscando por defecto: <strong>excel_enlaces_fichas.xlsx</strong>
-        </span>
+        <div id="statusBadge" class="status-badge">Cargando catálogo...</div>
       </div>
 
       <div class="toolbar">
@@ -336,7 +294,7 @@
         </thead>
         <tbody id="tableBody">
           <tr>
-            <td colspan="5" class="empty-state">Cargando datos del Excel...</td>
+            <td colspan="5" class="empty-state">Leyendo archivo excel_enlaces_fichas.xlsx...</td>
           </tr>
         </tbody>
       </table>
@@ -348,73 +306,38 @@
     let globalCatalog = [];
 
     const statusBadge = document.getElementById('statusBadge');
-    const fileNote = document.getElementById('fileNote');
-    const excelInput = document.getElementById('excelInput');
     const searchInput = document.getElementById('searchInput');
     const counterTag = document.getElementById('counterTag');
     const tableBody = document.getElementById('tableBody');
 
-    // Drag & Drop
-    const uploadZone = document.querySelector('.upload-zone');
-    uploadZone.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      uploadZone.style.borderColor = '#2563eb';
-      uploadZone.style.background = '#eff6ff';
-    });
-    uploadZone.addEventListener('dragleave', () => {
-      uploadZone.style.borderColor = '#cbd5e1';
-      uploadZone.style.background = '#f8fafc';
-    });
-    uploadZone.addEventListener('drop', (e) => {
-      e.preventDefault();
-      uploadZone.style.borderColor = '#cbd5e1';
-      uploadZone.style.background = '#f8fafc';
-      if (e.dataTransfer.files.length > 0) {
-        excelInput.files = e.dataTransfer.files;
-        handleManualUpload();
-      }
-    });
-
-    excelInput.addEventListener('change', handleManualUpload);
-
-    // Auto-fetch al cargar en GitHub Pages o servidor web
+    // Carga automática del archivo XLSX en GitHub Pages
     window.addEventListener('DOMContentLoaded', () => {
       fetch(EXCEL_FILE, { cache: 'no-store' })
         .then(response => {
-          if (!response.ok) throw new Error('Archivo no encontrado automáticamente');
+          if (!response.ok) {
+            throw new Error(`No se encontró el archivo ${EXCEL_FILE} en el repositorio.`);
+          }
           return response.arrayBuffer();
         })
         .then(buffer => {
           statusBadge.className = 'status-badge loaded';
-          statusBadge.innerText = '● Catálogo sincronizado (online)';
-          fileNote.innerHTML = 'Cargado automáticamente: <strong>excel_enlaces_fichas.xlsx</strong>';
+          statusBadge.innerText = '● Catálogo sincronizado';
           processWorkbook(buffer);
         })
-        .catch(() => {
-          statusBadge.className = 'status-badge';
-          statusBadge.innerText = 'Esperando archivo local';
+        .catch(err => {
+          statusBadge.className = 'status-badge error';
+          statusBadge.innerText = '● Error de carga';
           tableBody.innerHTML = `
             <tr>
-              <td colspan="5" class="empty-state">
-                Haz clic en <strong>Cambiar archivo Excel</strong> para seleccionar <code>excel_enlaces_fichas.xlsx</code>.
+              <td colspan="5" class="empty-state" style="color: var(--danger);">
+                No se ha podido cargar <strong>${EXCEL_FILE}</strong>.<br>
+                Asegúrate de que el archivo está subido exactamente con ese nombre en la raíz del repositorio de GitHub.
               </td>
             </tr>
           `;
+          console.error(err);
         });
     });
-
-    function handleManualUpload() {
-      const file = excelInput.files[0];
-      if (!file) return;
-
-      statusBadge.className = 'status-badge loaded';
-      statusBadge.innerText = '● Archivo cargado manualmente';
-      fileNote.innerHTML = `Archivo seleccionado: <strong>${file.name}</strong>`;
-
-      const reader = new FileReader();
-      reader.onload = (e) => processWorkbook(e.target.result);
-      reader.readAsArrayBuffer(file);
-    }
 
     function processWorkbook(buffer) {
       const data = new Uint8Array(buffer);
@@ -594,15 +517,13 @@
       }
 
       const ref = decodeURIComponent(safeRef);
-
-      // Escalado nítido x4 para que se descargue en alta definición
       const scale = 4;
       const exportCanvas = document.createElement("canvas");
       exportCanvas.width = qrCanvas.width * scale;
       exportCanvas.height = qrCanvas.height * scale;
 
       const ctx = exportCanvas.getContext("2d");
-      ctx.imageSmoothingEnabled = false; // Preserva nitidez pura sin desenfoque
+      ctx.imageSmoothingEnabled = false;
       ctx.drawImage(qrCanvas, 0, 0, exportCanvas.width, exportCanvas.height);
 
       const a = document.createElement("a");
