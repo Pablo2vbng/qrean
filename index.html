@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Catálogo - Códigos EAN-13 y QR Fichas Técnicas</title>
   
-  <!-- CDN SheetJS, JsBarcode y QRCode -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <!-- Librerías estables para navegador (CDNJS) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
   <style>
     :root {
@@ -201,7 +201,16 @@
       display: block;
     }
 
-    .qr-canvas {
+    .qr-container {
+      width: 80px;
+      height: 80px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .qr-container canvas,
+    .qr-container img {
       width: 80px !important;
       height: 80px !important;
       display: block;
@@ -302,7 +311,6 @@
   </div>
 
   <script>
-    // Se resuelve de manera relativa a la ubicación actual de la página
     const targetUrl = new URL('excel_enlaces_fichas.xlsx', window.location.href).href;
     let globalCatalog = [];
 
@@ -315,7 +323,7 @@
       fetch(targetUrl, { cache: 'no-store' })
         .then(response => {
           if (!response.ok) {
-            throw new Error(`HTTP ${response.status} - No se pudo encontrar el archivo en: ${targetUrl}`);
+            throw new Error(`HTTP ${response.status} - No se encontró el archivo en: ${targetUrl}`);
           }
           return response.arrayBuffer();
         })
@@ -340,30 +348,36 @@
     });
 
     function processWorkbook(buffer) {
-      const data = new Uint8Array(buffer);
-      const workbook = XLSX.read(data, { type: 'array' });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+      try {
+        const data = new Uint8Array(buffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
-      globalCatalog = json.map(row => {
-        let ref = '', desc = '', pvp = '', ean = '', ficha = '';
+        globalCatalog = json.map(row => {
+          let ref = '', desc = '', pvp = '', ean = '', ficha = '';
 
-        for (const key in row) {
-          const cleanKey = key.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-          const val = String(row[key]).trim();
+          for (const key in row) {
+            const cleanKey = key.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const val = String(row[key]).trim();
 
-          if (cleanKey.includes('referencia') || cleanKey === 'ref') ref = val;
-          else if (cleanKey.includes('descripc')) desc = val;
-          else if (cleanKey.includes('pvp') || cleanKey.includes('precio')) pvp = val;
-          else if (cleanKey.includes('ean')) ean = val;
-          else if (cleanKey.includes('ficha') || cleanKey.includes('tecnica') || cleanKey.includes('link') || cleanKey.includes('url')) ficha = val;
-        }
+            if (cleanKey.includes('referencia') || cleanKey === 'ref') ref = val;
+            else if (cleanKey.includes('descripc')) desc = val;
+            else if (cleanKey.includes('pvp') || cleanKey.includes('precio')) pvp = val;
+            else if (cleanKey.includes('ean')) ean = val;
+            else if (cleanKey.includes('ficha') || cleanKey.includes('tecnica') || cleanKey.includes('link') || cleanKey.includes('url')) ficha = val;
+          }
 
-        return { ref, desc, pvp, ean, ficha };
-      });
+          return { ref, desc, pvp, ean, ficha };
+        });
 
-      searchInput.disabled = false;
-      renderTable(globalCatalog);
+        searchInput.disabled = false;
+        renderTable(globalCatalog);
+      } catch (e) {
+        statusBadge.className = 'status-badge error';
+        statusBadge.innerText = '● Error al procesar datos';
+        tableBody.innerHTML = `<tr><td colspan="5" class="empty-state" style="color: var(--danger);">Error procesando el archivo: ${e.message}</td></tr>`;
+      }
     }
 
     searchInput.addEventListener('input', () => {
@@ -394,7 +408,7 @@
         }
 
         const barcodeId = `barcode-${index}`;
-        const qrCanvasId = `qr-${index}`;
+        const qrBoxId = `qr-box-${index}`;
         const safeRef = encodeURIComponent(item.ref || `item_${index}`);
 
         tr.innerHTML = `
@@ -419,8 +433,8 @@
             <div class="item-cell">
               ${
                 item.ficha
-                  ? `<canvas id="${qrCanvasId}" class="qr-canvas"></canvas>
-                     <button class="btn-dl btn-qr" onclick="downloadQR('${qrCanvasId}', '${safeRef}')">
+                  ? `<div id="${qrBoxId}" class="qr-container"></div>
+                     <button class="btn-dl btn-qr" onclick="downloadQR('${qrBoxId}', '${safeRef}')">
                        ⬇ Guardar QR
                      </button>
                      <a href="${item.ficha}" target="_blank" rel="noopener noreferrer" class="link-view">
@@ -434,6 +448,7 @@
 
         tableBody.appendChild(tr);
 
+        // Render Barcode
         if (formattedEan.length >= 12) {
           try {
             JsBarcode(`#${barcodeId}`, formattedEan, {
@@ -461,13 +476,17 @@
           }
         }
 
+        // Render QR con qrcodejs
         if (item.ficha) {
-          const qrCanvas = document.getElementById(qrCanvasId);
-          if (qrCanvas) {
-            QRCode.toCanvas(qrCanvas, item.ficha, {
-              width: 140,
-              margin: 1,
-              color: { dark: '#000000', light: '#ffffff' }
+          const qrContainer = document.getElementById(qrBoxId);
+          if (qrContainer) {
+            new QRCode(qrContainer, {
+              text: item.ficha,
+              width: 160,
+              height: 160,
+              colorDark: "#000000",
+              colorLight: "#ffffff",
+              correctLevel: QRCode.CorrectLevel.M
             });
           }
         }
@@ -507,25 +526,32 @@
       img.src = url;
     }
 
-    function downloadQR(canvasId, safeRef) {
-      const qrCanvas = document.getElementById(canvasId);
-      if (!qrCanvas) return;
+    function downloadQR(qrBoxId, safeRef) {
+      const qrContainer = document.getElementById(qrBoxId);
+      if (!qrContainer) return;
 
       const ref = decodeURIComponent(safeRef);
-      const scale = 4;
-      const exportCanvas = document.createElement("canvas");
-      exportCanvas.width = qrCanvas.width * scale;
-      exportCanvas.height = qrCanvas.height * scale;
+      const cleanRef = ref.replace(/[^a-zA-Z0-9_-]/g, "_");
 
-      const ctx = exportCanvas.getContext("2d");
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(qrCanvas, 0, 0, exportCanvas.width, exportCanvas.height);
+      // QRCodeJS genera un canvas o una imagen (img)
+      const canvas = qrContainer.querySelector("canvas");
+      const img = qrContainer.querySelector("img");
+
+      let dataUrl = "";
+      if (canvas) {
+        dataUrl = canvas.toDataURL("image/png");
+      } else if (img && img.src) {
+        dataUrl = img.src;
+      }
+
+      if (!dataUrl) {
+        console.error("No se pudo obtener la imagen del QR");
+        return;
+      }
 
       const a = document.createElement("a");
-      const cleanRef = ref.replace(/[^a-zA-Z0-9_-]/g, "_");
       a.download = `QR_Ficha_${cleanRef}.png`;
-      a.href = exportCanvas.toDataURL("image/png");
-
+      a.href = dataUrl;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
