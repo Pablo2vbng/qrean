@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Catálogo - Códigos EAN-13 y QR Fichas Técnicas</title>
+  
+  <!-- CDN SheetJS, JsBarcode y QRCode -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+
+  <style>
+    :root {
+      --primary: #0f172a;
+      --accent: #2563eb;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --border: #e2e8f0;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --success: #15803d;
+      --success-bg: #dcfce7;
+      --danger: #b91c1c;
+      --danger-bg: #fee2e2;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      padding: 24px 16px;
+      line-height: 1.5;
+    }
+
+    .container {
+      max-width: 1250px;
+      margin: 0 auto;
+    }
+
+    header {
+      background: var(--card-bg);
+      padding: 24px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+      margin-bottom: 20px;
+    }
+
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 6px;
+    }
+
+    p.subtitle {
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 9999px;
+      background: #f1f5f9;
+      color: var(--text-muted);
+      border: 1px solid #cbd5e1;
+    }
+
+    .status-badge.loaded {
+      background: var(--success-bg);
+      color: var(--success);
+      border-color: #86efac;
+    }
+
+    .upload-zone {
+      margin-top: 18px;
+      border: 2px dashed #cbd5e1;
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+      background: #f8fafc;
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+
+    .upload-zone:hover {
+      border-color: var(--accent);
+      background: #eff6ff;
+    }
+
+    .upload-zone input {
+      display: none;
+    }
+
+    .btn-action {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      color: #334155;
+      padding: 7px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .btn-action:hover {
+      background: #f1f5f9;
+      border-color: #94a3b8;
+    }
+
+    .toolbar {
+      margin-top: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .search-input {
+      flex: 1;
+      min-width: 260px;
+      padding: 9px 12px;
+      font-size: 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      outline: none;
+      background: #ffffff;
+    }
+
+    .search-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+
+    .items-count {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .table-container {
+      background: var(--card-bg);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th {
+      background: #f8fafc;
+      color: #475569;
+      padding: 12px 14px;
+      font-weight: 600;
+      border-bottom: 2px solid var(--border);
+      white-space: nowrap;
+      text-align: left;
+    }
+
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+
+    tr:hover td {
+      background: #f8fafc;
+    }
+
+    .badge-ref {
+      font-family: monospace;
+      font-size: 12px;
+      font-weight: 700;
+      color: #1e3a8a;
+      background: #eff6ff;
+      padding: 4px 8px;
+      border-radius: 4px;
+      display: inline-block;
+      border: 1px solid #bfdbfe;
+    }
+
+    .desc-col {
+      max-width: 280px;
+      font-weight: 500;
+      color: #1e293b;
+    }
+
+    .price-col {
+      font-weight: 600;
+      color: #0f172a;
+      white-space: nowrap;
+    }
+
+    .item-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      min-width: 150px;
+    }
+
+    .barcode-svg {
+      max-width: 150px;
+      height: 48px;
+      display: block;
+    }
+
+    .qr-canvas {
+      width: 80px !important;
+      height: 80px !important;
+      display: block;
+    }
+
+    .btn-dl {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 5px 10px;
+      border-radius: 4px;
+      border: 1px solid #cbd5e1;
+      background: #ffffff;
+      color: #1e293b;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .btn-dl:hover {
+      background: #f1f5f9;
+      border-color: #94a3b8;
+    }
+
+    .btn-dl.btn-qr {
+      background: #eff6ff;
+      color: #1d4ed8;
+      border-color: #bfdbfe;
+    }
+
+    .btn-dl.btn-qr:hover {
+      background: #dbeafe;
+    }
+
+    .link-view {
+      font-size: 11px;
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .link-view:hover {
+      text-decoration: underline;
+    }
+
+    .empty-state {
+      padding: 40px 16px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    .error-label {
+      color: var(--danger);
+      background: var(--danger-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <div class="header-top">
+        <div>
+          <h1>Catálogo de Productos: EAN-13 y QR</h1>
+          <p class="subtitle">Descarga uno a uno los códigos de barras y los QR vinculados a las fichas técnicas.</p>
+        </div>
+        <div id="statusBadge" class="status-badge">Conectando con datos...</div>
+      </div>
+
+      <div class="upload-zone" onclick="document.getElementById('excelInput').click()">
+        <input type="file" id="excelInput" accept=".xlsx, .xls">
+        <span class="btn-action">📂 Cambiar archivo Excel</span>
+        <span id="fileNote" style="margin-left: 8px; font-size: 12px; color: var(--text-muted);">
+          Buscando por defecto: <strong>excel_enlaces_fichas.xlsx</strong>
+        </span>
+      </div>
+
+      <div class="toolbar">
+        <input type="text" id="searchInput" class="search-input" placeholder="Buscar por referencia, descripción o EAN..." disabled>
+        <span id="counterTag" class="items-count">0 productos</span>
+      </div>
+    </header>
+
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Ref.</th>
+            <th>Descripción</th>
+            <th>PVP</th>
+            <th style="text-align:center;">Código Barras (EAN-13)</th>
+            <th style="text-align:center;">QR Ficha Técnica</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody">
+          <tr>
+            <td colspan="5" class="empty-state">Cargando datos del Excel...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const EXCEL_FILE = './excel_enlaces_fichas.xlsx';
+    let globalCatalog = [];
+
+    const statusBadge = document.getElementById('statusBadge');
+    const fileNote = document.getElementById('fileNote');
+    const excelInput = document.getElementById('excelInput');
+    const searchInput = document.getElementById('searchInput');
+    const counterTag = document.getElementById('counterTag');
+    const tableBody = document.getElementById('tableBody');
+
+    // Drag & Drop
+    const uploadZone = document.querySelector('.upload-zone');
+    uploadZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadZone.style.borderColor = '#2563eb';
+      uploadZone.style.background = '#eff6ff';
+    });
+    uploadZone.addEventListener('dragleave', () => {
+      uploadZone.style.borderColor = '#cbd5e1';
+      uploadZone.style.background = '#f8fafc';
+    });
+    uploadZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadZone.style.borderColor = '#cbd5e1';
+      uploadZone.style.background = '#f8fafc';
+      if (e.dataTransfer.files.length > 0) {
+        excelInput.files = e.dataTransfer.files;
+        handleManualUpload();
+      }
+    });
+
+    excelInput.addEventListener('change', handleManualUpload);
+
+    // Auto-fetch al cargar en GitHub Pages o servidor web
+    window.addEventListener('DOMContentLoaded', () => {
+      fetch(EXCEL_FILE, { cache: 'no-store' })
+        .then(response => {
+          if (!response.ok) throw new Error('Archivo no encontrado automáticamente');
+          return response.arrayBuffer();
+        })
+        .then(buffer => {
+          statusBadge.className = 'status-badge loaded';
+          statusBadge.innerText = '● Catálogo sincronizado (online)';
+          fileNote.innerHTML = 'Cargado automáticamente: <strong>excel_enlaces_fichas.xlsx</strong>';
+          processWorkbook(buffer);
+        })
+        .catch(() => {
+          statusBadge.className = 'status-badge';
+          statusBadge.innerText = 'Esperando archivo local';
+          tableBody.innerHTML = `
+            <tr>
+              <td colspan="5" class="empty-state">
+                Haz clic en <strong>Cambiar archivo Excel</strong> para seleccionar <code>excel_enlaces_fichas.xlsx</code>.
+              </td>
+            </tr>
+          `;
+        });
+    });
+
+    function handleManualUpload() {
+      const file = excelInput.files[0];
+      if (!file) return;
+
+      statusBadge.className = 'status-badge loaded';
+      statusBadge.innerText = '● Archivo cargado manualmente';
+      fileNote.innerHTML = `Archivo seleccionado: <strong>${file.name}</strong>`;
+
+      const reader = new FileReader();
+      reader.onload = (e) => processWorkbook(e.target.result);
+      reader.readAsArrayBuffer(file);
+    }
+
+    function processWorkbook(buffer) {
+      const data = new Uint8Array(buffer);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+      globalCatalog = json.map(row => {
+        let ref = '', desc = '', pvp = '', ean = '', ficha = '';
+
+        for (const key in row) {
+          const cleanKey = key.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          const val = String(row[key]).trim();
+
+          if (cleanKey.includes('referencia') || cleanKey === 'ref') ref = val;
+          else if (cleanKey.includes('descripc')) desc = val;
+          else if (cleanKey.includes('pvp') || cleanKey.includes('precio')) pvp = val;
+          else if (cleanKey.includes('ean')) ean = val;
+          else if (cleanKey.includes('ficha') || cleanKey.includes('tecnica') || cleanKey.includes('link') || cleanKey.includes('url')) ficha = val;
+        }
+
+        return { ref, desc, pvp, ean, ficha };
+      });
+
+      searchInput.disabled = false;
+      renderTable(globalCatalog);
+    }
+
+    searchInput.addEventListener('input', () => {
+      const query = searchInput.value.toLowerCase().trim();
+      const filtered = globalCatalog.filter(item => 
+        item.ref.toLowerCase().includes(query) ||
+        item.desc.toLowerCase().includes(query) ||
+        item.ean.toLowerCase().includes(query)
+      );
+      renderTable(filtered);
+    });
+
+    function renderTable(items) {
+      tableBody.innerHTML = '';
+      counterTag.innerText = `${items.length} producto(s)`;
+
+      if (items.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="5" class="empty-state">No se encontraron coincidencias.</td></tr>`;
+        return;
+      }
+
+      items.forEach((item, index) => {
+        const tr = document.createElement('tr');
+
+        let formattedEan = item.ean.replace(/[^0-9]/g, '');
+        if (formattedEan.length > 0 && formattedEan.length < 13) {
+          formattedEan = formattedEan.padStart(13, '0');
+        }
+
+        const barcodeId = `barcode-${index}`;
+        const qrCanvasId = `qr-${index}`;
+        const safeRef = encodeURIComponent(item.ref || `item_${index}`);
+
+        tr.innerHTML = `
+          <td><span class="badge-ref">${item.ref || 'S/R'}</span></td>
+          <td class="desc-col">${item.desc || '-'}</td>
+          <td class="price-col">${item.pvp ? (item.pvp.includes('€') ? item.pvp : item.pvp + ' €') : '-'}</td>
+          
+          <td style="text-align:center;">
+            <div class="item-cell">
+              ${
+                formattedEan.length >= 12
+                  ? `<svg id="${barcodeId}" class="barcode-svg"></svg>
+                     <button class="btn-dl" onclick="downloadBarcode('${barcodeId}', '${safeRef}')">
+                       ⬇ Guardar Barcode
+                     </button>`
+                  : `<span class="error-label">${item.ean ? 'EAN no válido' : 'Sin EAN'}</span>`
+              }
+            </div>
+          </td>
+
+          <td style="text-align:center;">
+            <div class="item-cell">
+              ${
+                item.ficha
+                  ? `<canvas id="${qrCanvasId}" class="qr-canvas"></canvas>
+                     <button class="btn-dl btn-qr" onclick="downloadQR('${qrCanvasId}', '${safeRef}')">
+                       ⬇ Guardar QR
+                     </button>
+                     <a href="${item.ficha}" target="_blank" rel="noopener noreferrer" class="link-view">
+                       Abrir ficha ↗
+                     </a>`
+                  : `<span class="error-label">Sin enlace</span>`
+              }
+            </div>
+          </td>
+        `;
+
+        tableBody.appendChild(tr);
+
+        // Render Barcode
+        if (formattedEan.length >= 12) {
+          try {
+            JsBarcode(`#${barcodeId}`, formattedEan, {
+              format: formattedEan.length === 13 ? "EAN13" : "CODE128",
+              lineColor: "#000",
+              width: 1.4,
+              height: 38,
+              fontSize: 11,
+              displayValue: true
+            });
+          } catch (e) {
+            try {
+              JsBarcode(`#${barcodeId}`, formattedEan, {
+                format: "CODE128",
+                lineColor: "#000",
+                width: 1.4,
+                height: 38,
+                fontSize: 11,
+                displayValue: true
+              });
+            } catch (err) {
+              const el = document.getElementById(barcodeId);
+              if (el) el.outerHTML = '<span class="error-label">Checksum erróneo</span>';
+            }
+          }
+        }
+
+        // Render QR
+        if (item.ficha) {
+          const qrCanvas = document.getElementById(qrCanvasId);
+          if (qrCanvas) {
+            QRCode.toCanvas(qrCanvas, item.ficha, {
+              width: 140,
+              margin: 1,
+              color: { dark: '#000000', light: '#ffffff' }
+            });
+          }
+        }
+      });
+    }
+
+    function downloadBarcode(svgId, safeRef) {
+      const svg = document.getElementById(svgId);
+      if (!svg) return;
+
+      const ref = decodeURIComponent(safeRef);
+      const svgData = new XMLSerializer().serializeToString(svg);
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      const img = new Image();
+
+      const blob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+
+      img.onload = function () {
+        canvas.width = (img.width || 150) * 2;
+        canvas.height = (img.height || 60) * 2;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        const a = document.createElement("a");
+        const cleanRef = ref.replace(/[^a-zA-Z0-9_-]/g, "_");
+        a.download = `EAN_${cleanRef}.png`;
+        a.href = canvas.toDataURL("image/png");
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      };
+
+      img.src = url;
+    }
+
+    function downloadQR(canvasId, safeRef) {
+      const qrCanvas = document.getElementById(canvasId);
+      if (!qrCanvas) {
+        console.error("Canvas no encontrado:", canvasId);
+        return;
+      }
+
+      const ref = decodeURIComponent(safeRef);
+
+      // Escalado nítido x4 para que se descargue en alta definición
+      const scale = 4;
+      const exportCanvas = document.createElement("canvas");
+      exportCanvas.width = qrCanvas.width * scale;
+      exportCanvas.height = qrCanvas.height * scale;
+
+      const ctx = exportCanvas.getContext("2d");
+      ctx.imageSmoothingEnabled = false; // Preserva nitidez pura sin desenfoque
+      ctx.drawImage(qrCanvas, 0, 0, exportCanvas.width, exportCanvas.height);
+
+      const a = document.createElement("a");
+      const cleanRef = ref.replace(/[^a-zA-Z0-9_-]/g, "_");
+      a.download = `QR_Ficha_${cleanRef}.png`;
+      a.href = exportCanvas.toDataURL("image/png");
+
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  </script>
+</body>
+</html>
