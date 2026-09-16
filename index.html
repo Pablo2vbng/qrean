@@ -302,7 +302,8 @@
   </div>
 
   <script>
-    const EXCEL_FILE = '/excel_enlaces_fichas.xlsx';
+    // Se resuelve de manera relativa a la ubicación actual de la página
+    const targetUrl = new URL('excel_enlaces_fichas.xlsx', window.location.href).href;
     let globalCatalog = [];
 
     const statusBadge = document.getElementById('statusBadge');
@@ -310,12 +311,11 @@
     const counterTag = document.getElementById('counterTag');
     const tableBody = document.getElementById('tableBody');
 
-    // Carga automática del archivo XLSX en GitHub Pages
     window.addEventListener('DOMContentLoaded', () => {
-      fetch(EXCEL_FILE, { cache: 'no-store' })
+      fetch(targetUrl, { cache: 'no-store' })
         .then(response => {
           if (!response.ok) {
-            throw new Error(`No se encontró el archivo ${EXCEL_FILE} en el repositorio.`);
+            throw new Error(`HTTP ${response.status} - No se pudo encontrar el archivo en: ${targetUrl}`);
           }
           return response.arrayBuffer();
         })
@@ -326,12 +326,12 @@
         })
         .catch(err => {
           statusBadge.className = 'status-badge error';
-          statusBadge.innerText = '● Error de carga';
+          statusBadge.innerText = '● Error al cargar el archivo';
           tableBody.innerHTML = `
             <tr>
               <td colspan="5" class="empty-state" style="color: var(--danger);">
-                No se ha podido cargar <strong>${EXCEL_FILE}</strong>.<br>
-                Asegúrate de que el archivo está subido exactamente con ese nombre en la raíz del repositorio de GitHub.
+                No se pudo cargar: <strong>${targetUrl}</strong><br>
+                Detalle: ${err.message}
               </td>
             </tr>
           `;
@@ -419,7 +419,7 @@
             <div class="item-cell">
               ${
                 item.ficha
-                  ? `<canvas id="${qrCanvasId}" class="qr-canvas hola"></canvas>
+                  ? `<canvas id="${qrCanvasId}" class="qr-canvas"></canvas>
                      <button class="btn-dl btn-qr" onclick="downloadQR('${qrCanvasId}', '${safeRef}')">
                        ⬇ Guardar QR
                      </button>
@@ -434,7 +434,6 @@
 
         tableBody.appendChild(tr);
 
-        // Render Barcode
         if (formattedEan.length >= 12) {
           try {
             JsBarcode(`#${barcodeId}`, formattedEan, {
@@ -462,7 +461,6 @@
           }
         }
 
-        // Render QR
         if (item.ficha) {
           const qrCanvas = document.getElementById(qrCanvasId);
           if (qrCanvas) {
@@ -511,10 +509,7 @@
 
     function downloadQR(canvasId, safeRef) {
       const qrCanvas = document.getElementById(canvasId);
-      if (!qrCanvas) {
-        console.error("Canvas no encontrado:", canvasId);
-        return;
-      }
+      if (!qrCanvas) return;
 
       const ref = decodeURIComponent(safeRef);
       const scale = 4;
